@@ -1,0 +1,58 @@
+/*
+ * GAS-SIMHOT — Global Stylesheet  (assets/style.css)
+ * Used by the root index.html and any standalone pages.
+ * Dashboards use inline <style> for full encapsulation.
+ */
+
+:root {
+    --bg:     #050d1a;
+    --panel:  #0b1629;
+    --border: #1a3a5c;
+    --accent: #00d4ff;
+    --a2:     #ff4c4c;
+    --a3:     #00e5a0;
+    --text:   #cfe8ff;
+    --muted:  #4a7a9b;
+    --mono:   'Share Tech Mono', monospace;
+    --sans:   'Exo 2', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans, Arial, sans-serif);
+    min-height: 100vh;
+}
+
+/* Simple status indicator used by index.html */
+#status-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 150px; height: 150px;
+    border-radius: 50%;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: white;
+    transition: background .4s, box-shadow .4s;
+}
+
+.safe   { background: var(--a3); box-shadow: 0 0 24px rgba(0,229,160,.4); }
+.danger { background: var(--a2); box-shadow: 0 0 24px rgba(255,76,76,.5); animation: blink .5s infinite; }
+
+@keyframes blink {
+    0%, 100% { opacity: 1;  }
+    50%       { opacity: .5; }
+}
+
+button {
+    padding: .6rem 1.4rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    transition: .2s;
+}
