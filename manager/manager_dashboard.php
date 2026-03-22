@@ -153,9 +153,40 @@ tbody td{padding:.5rem .8rem;vertical-align:middle;}
 .inp:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,229,160,.15);}
 .inp option{background:var(--panel);color:var(--text);}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;}
+
+/* ── Global Toast ── */
+.global-toast{position:fixed;top:1.2rem;right:1.2rem;background:#0a1a12;border:1px solid var(--danger);border-left:4px solid var(--danger);border-radius:10px;padding:.9rem 1.2rem;display:none;align-items:center;gap:.8rem;z-index:9998;max-width:340px;box-shadow:0 4px 24px rgba(255,76,76,.3);}
+.global-toast.show{display:flex;animation:toastIn .3s ease both;}
+@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.toast-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulseT 1s infinite;flex-shrink:0;}
+@keyframes pulseT{0%,100%{opacity:1}50%{opacity:.4}}
+.toast-msg{font-size:.82rem;color:var(--text);line-height:1.4;}
+.toast-msg strong{color:var(--danger);font-family:var(--mono);}
+.toast-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;line-height:1;flex-shrink:0;}
+
+/* ── Toast ── */
+.notif-toast{position:fixed;top:1.2rem;right:1.2rem;max-width:320px;background:#0b1a18;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:1rem 1.2rem;z-index:8000;display:none;animation:slideIn .3s ease both;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.notif-toast.show{display:block;}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.notif-toast.danger{border-left-color:var(--danger);background:#130008;}
+.notif-toast.success{border-left-color:var(--accent);background:#001a0f;}
+.notif-title{font-family:var(--mono);font-size:.85rem;font-weight:700;margin-bottom:.3rem;}
+.notif-body{font-size:.78rem;color:var(--muted);line-height:1.5;}
 </style>
 </head>
 <body>
+
+<div class="global-toast" id="global-toast">
+  <span class="toast-dot"></span>
+  <div class="toast-msg"><strong>🚨 GAS LEAK ACTIVE</strong><br><span id="toast-loc"></span></div>
+  <button class="toast-close" onclick="document.getElementById('global-toast').classList.remove('show')">✕</button>
+</div>
+
+
+<div class="notif-toast" id="notifToast">
+  <div class="notif-title" id="notifTitle"></div>
+  <div class="notif-body" id="notifBody"></div>
+</div>
 
 <aside class="sidebar">
   <div class="sb-logo">
@@ -315,6 +346,13 @@ setInterval(() => {
   fetch(CHECK_URL).then(r => r.json()).then(d => {
     const el = document.getElementById('sys-status');
     const card = document.getElementById('sys-card');
+
+    if (d.is_active === 1) {
+      document.getElementById('toast-loc').textContent = '📍 ' + (d.location||'Unknown') + '  👤 ' + (d.triggered_by||'');
+      document.getElementById('global-toast').classList.add('show');
+    } else {
+      document.getElementById('global-toast').classList.remove('show');
+    }
     if (d.is_active === 1) { el.textContent = 'ALERT'; card.className = 'sc red'; }
     else                   { el.textContent = 'SAFE';  card.className = 'sc green'; }
   }).catch(()=>{});

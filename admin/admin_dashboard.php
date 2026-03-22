@@ -152,6 +152,16 @@ tbody td{padding:.5rem .7rem;vertical-align:middle;}
 .alert-bar{border-radius:8px;padding:.7rem 1.1rem;font-size:.82rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:.6rem;}
 .alert-bar.success{background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.3);color:var(--success);}
 
+/* ── GLOBAL TOAST ── */
+.global-toast{position:fixed;top:1.2rem;right:1.2rem;background:#130a0e;border:1px solid var(--danger);border-left:4px solid var(--danger);border-radius:10px;padding:.9rem 1.2rem;display:none;align-items:center;gap:.8rem;z-index:9998;max-width:340px;box-shadow:0 4px 24px rgba(255,76,76,.3);animation:toastIn .3s ease both;}
+.global-toast.show{display:flex;}
+@keyframes toastIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.toast-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);animation:pulse 1s infinite;flex-shrink:0;}
+.toast-msg{font-size:.82rem;color:var(--text);line-height:1.4;}
+.toast-msg strong{color:var(--danger);font-family:var(--mono);}
+.toast-close{background:none;border:none;color:var(--muted);cursor:pointer;font-size:1.1rem;line-height:1;flex-shrink:0;}
+.toast-close:hover{color:var(--text);}
+
 /* Sticky emergency alert */
 #sticky-alert{position:fixed;bottom:1.5rem;right:1.5rem;width:360px;background:#150b0b;border:1px solid rgba(255,76,76,.5);border-left:5px solid var(--danger);border-radius:10px;padding:1.2rem 1.4rem;box-shadow:0 8px 32px rgba(255,76,76,.2);z-index:9000;display:none;animation:slideUp .3s ease both;}
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
@@ -159,9 +169,37 @@ tbody td{padding:.5rem .7rem;vertical-align:middle;}
 #sticky-alert p{font-size:.82rem;color:var(--text);margin:.6rem 0 1rem;line-height:1.5;}
 .btn-ack{width:100%;background:var(--danger);color:white;border:none;border-radius:6px;padding:.55rem;font-size:.85rem;font-weight:700;cursor:pointer;font-family:var(--mono);letter-spacing:.06em;transition:background .2s;}
 .btn-ack:hover{background:#ff6b6b;}
+
+/* ── Toast Notification ── */
+.notif-toast{position:fixed;top:1.2rem;right:1.2rem;max-width:320px;background:#0b1629;border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:1rem 1.2rem;z-index:8000;display:none;animation:slideIn .3s ease both;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+.notif-toast.show{display:block;}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.notif-toast.danger{border-left-color:var(--danger);background:#130008;}
+.notif-toast.success{border-left-color:var(--success);background:#001a0f;}
+.notif-title{font-family:var(--mono);font-size:.85rem;font-weight:700;margin-bottom:.3rem;}
+.notif-body{font-size:.78rem;color:var(--muted);line-height:1.5;}
 </style>
 </head>
 <body>
+
+<div class="global-toast" id="global-toast">
+  <span class="toast-dot"></span>
+  <div class="toast-msg"><strong>🚨 GAS LEAK ACTIVE</strong><br><span id="toast-loc"></span></div>
+  <button class="toast-close" onclick="document.getElementById('global-toast').classList.remove('show')">✕</button>
+</div>
+
+<div class="global-toast" id="global-toast">
+  <span class="toast-dot"></span>
+  <div class="toast-msg"><strong>🚨 GAS LEAK ACTIVE</strong><br><span id="toast-loc"></span></div>
+  <button class="toast-close" onclick="document.getElementById('global-toast').classList.remove('show')">✕</button>
+</div>
+
+
+<!-- Toast -->
+<div class="notif-toast" id="notifToast">
+  <div class="notif-title" id="notifTitle"></div>
+  <div class="notif-body" id="notifBody"></div>
+</div>
 
 <aside class="sidebar">
   <div class="sb-logo">
@@ -342,6 +380,14 @@ function poll() {
       const active = d.is_active === 1;
       const acked  = d.acknowledged_by_admin === 1;
       const ppm    = d.ppm || (active ? 450 : 0);
+      // Global toast notification
+      if (active) {
+        document.getElementById('toast-loc').textContent = '📍 ' + (d.location||'') + '  👤 ' + (d.triggered_by||'');
+        document.getElementById('global-toast').classList.add('show');
+      } else {
+        document.getElementById('global-toast').classList.remove('show');
+      }
+
 
       document.getElementById('live-ppm').textContent = ppm;
       document.getElementById('gauge-loc').textContent = active ? (d.location || '—') : '—';
@@ -368,6 +414,10 @@ function poll() {
         }
 
         if (!acked) {
+          // Show toast if new leak
+          if (!prevActive) {
+            showToast('danger', '🚨 GAS LEAK ALERT', '📍 ' + (d.location||'Unknown') + '  👤 ' + (d.triggered_by||''));
+          }
           const sa = document.getElementById('sticky-alert');
           sa.style.display = 'block';
           document.getElementById('sticky-msg').textContent =
@@ -387,6 +437,7 @@ function poll() {
       }
     })
     .catch(() => {});
+  prevActive = d.is_active === 1;
 }
 
 function acknowledge() {
@@ -394,6 +445,21 @@ function acknowledge() {
   fd.append('action', 'admin_ack');
   fetch(LOG_ACT_URL, {method:'POST', body:fd}).then(() => poll());
 }
+
+
+// Toast notification
+let toastTimer = null;
+function showToast(type, title, body, duration=5000) {
+  const t = document.getElementById('notifToast');
+  t.className = 'notif-toast show ' + type;
+  document.getElementById('notifTitle').textContent = title;
+  document.getElementById('notifBody').textContent  = body;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// Track previous state for notifications
+let prevActive = false;
 
 setInterval(poll, 2000);
 poll();
