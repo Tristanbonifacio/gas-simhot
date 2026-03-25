@@ -6,14 +6,26 @@ $user        = current_user();
 $db          = db();
 $uid         = $user['id'];
 
-$logs = $db->query("SELECT action, created_at FROM user_activity_logs WHERE user_id=$uid ORDER BY created_at DESC LIMIT 20");
+// Handle checklist task logging via AJAX
+if (isset($_POST['log_checklist_task']) && !empty($_SESSION['user_id'])) {
+    header('Content-Type: application/json');
+    $task   = $db->real_escape_string(trim($_POST['task_name'] ?? ''));
+    $action = "Safety Check: $task";
+    $db->query("INSERT INTO user_activity_logs (user_id, action) VALUES ($uid, '$action')");
+    echo json_encode(['status' => 'ok']);
+    exit();
+}
+
+$logs      = $db->query("SELECT action, created_at FROM user_activity_logs WHERE user_id=$uid ORDER BY created_at DESC LIMIT 20");
 $my_leaks  = (int)$db->query("SELECT COUNT(*) c FROM user_activity_logs WHERE user_id=$uid AND action LIKE '%Leak%'")->fetch_assoc()['c'];
 $my_resets = (int)$db->query("SELECT COUNT(*) c FROM user_activity_logs WHERE user_id=$uid AND action LIKE '%Reset%'")->fetch_assoc()['c'];
 $my_total  = (int)$db->query("SELECT COUNT(*) c FROM user_activity_logs WHERE user_id=$uid")->fetch_assoc()['c'];
 
 $check_url   = base_url() . 'auth/check_alert.php';
 $log_act_url = base_url() . 'core/log_action.php';
+$record_url  = base_url() . 'core/record_ppm.php';
 $logout_url  = logout_url();
+$profile_url = base_url() . 'user/profile.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -71,6 +83,7 @@ body{display:flex;background:var(--bg);color:var(--text);font-family:var(--sans)
 .sensor-wrap{text-align:center;}
 .sensor-ring{position:relative;width:160px;height:160px;border-radius:50%;border:10px solid var(--border);margin:.5rem auto 1rem;display:flex;align-items:center;justify-content:center;flex-direction:column;transition:border-color .4s,box-shadow .4s;}
 .sensor-ring.safe{border-color:var(--success);box-shadow:0 0 28px rgba(0,229,160,.3);}
+.sensor-ring.warn{border-color:var(--warn);box-shadow:0 0 28px rgba(255,179,0,.4);}
 .sensor-ring.danger{border-color:var(--danger);box-shadow:0 0 36px rgba(255,76,122,.5);animation:dShake .3s infinite alternate;}
 @keyframes dShake{from{transform:rotate(-.5deg)}to{transform:rotate(.5deg)}}
 .s-ppm{font-family:var(--mono);font-size:2rem;font-weight:700;line-height:1;transition:color .4s;}
@@ -87,6 +100,7 @@ body{display:flex;background:var(--bg);color:var(--text);font-family:var(--sans)
 .alert-banner{display:none;border-radius:8px;padding:.8rem 1rem;font-size:.85rem;font-weight:600;margin-bottom:1rem;align-items:center;gap:.6rem;}
 .alert-banner.show{display:flex;}
 .ab-danger{background:rgba(255,76,122,.12);border:1px solid rgba(255,76,122,.4);color:var(--danger);animation:blinkB 1s linear infinite;}
+.ab-warn{background:rgba(255,179,0,.1);border:1px solid rgba(255,179,0,.4);color:var(--warn);}
 .ab-ack{background:rgba(0,229,160,.1);border:1px solid rgba(0,229,160,.3);color:var(--success);}
 @keyframes blinkB{50%{opacity:.5}}
 .log-scroll{max-height:320px;overflow-y:auto;}
@@ -101,133 +115,131 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
 .tag-danger{background:rgba(255,76,122,.15);color:var(--danger);}
 .tag-success{background:rgba(0,229,160,.12);color:var(--success);}
 .tag-info{background:rgba(0,212,255,.12);color:var(--blue);}
+.tag-warn{background:rgba(255,179,0,.12);color:var(--warn);}
 .tag-muted{background:rgba(74,82,128,.15);color:var(--muted);}
 
-/* ── LEAK POPUP NOTIFICATION ── */
-.leak-popup{
-  position:fixed;top:0;left:0;right:0;bottom:0;
-  background:rgba(0,0,0,.75);
-  z-index:9999;
-  display:none;
-  align-items:center;
-  justify-content:center;
-  backdrop-filter:blur(6px);
-  animation:fadeIn .3s ease both;
-}
-.leak-popup.show{display:flex;}
-@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+/* ── Toast ── */
+.toast{position:fixed;top:1.2rem;right:1.2rem;max-width:310px;border-radius:10px;padding:.9rem 1.1rem;z-index:8000;display:none;animation:tIn .3s ease both;box-shadow:0 8px 24px rgba(0,0,0,.4);font-size:.83rem;}
+.toast.show{display:block;}
+@keyframes tIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
+.toast.danger{background:#130008;border:1px solid rgba(255,76,122,.5);color:#ffb3c6;}
+.toast.success{background:#001a0f;border:1px solid rgba(0,229,160,.4);color:var(--success);}
+.toast.warn{background:#1a1000;border:1px solid rgba(255,179,0,.4);color:var(--warn);}
+.toast-title{font-family:var(--mono);font-weight:700;font-size:.85rem;margin-bottom:.2rem;}
 
-.leak-popup-box{
-  background:#130008;
-  border:2px solid var(--danger);
-  border-radius:16px;
-  padding:2.5rem 2rem;
-  max-width:420px;
-  width:90%;
-  text-align:center;
-  box-shadow:0 0 60px rgba(255,76,122,.4);
-  animation:popIn .4s cubic-bezier(.175,.885,.32,1.275) both;
-  position:relative;
-}
-@keyframes popIn{from{opacity:0;transform:scale(.8)}to{opacity:1;transform:scale(1)}}
+/* ── SAFETY CHECKLIST MODAL ── */
+.cl-overlay{position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:10000;display:none;align-items:center;justify-content:center;backdrop-filter:blur(8px);}
+.cl-overlay.show{display:flex;}
+.cl-box{background:#100818;border:2px solid var(--danger);border-radius:16px;padding:2rem;max-width:480px;width:90%;box-shadow:0 0 80px rgba(255,76,122,.25);animation:clIn .4s cubic-bezier(.175,.885,.32,1.275) both;}
+@keyframes clIn{from{opacity:0;transform:scale(.85) translateY(20px)}to{opacity:1;transform:scale(1) translateY(0)}}
+.cl-head{display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem;}
+.cl-icon{font-size:2.5rem;animation:cpulse .8s ease-in-out infinite alternate;}
+@keyframes cpulse{from{transform:scale(1)}to{transform:scale(1.15)}}
+.cl-title{font-family:var(--mono);font-size:1.05rem;color:var(--danger);letter-spacing:.08em;margin-bottom:.2rem;}
+.cl-sub{font-size:.75rem;color:var(--muted);}
+.cl-alert-box{background:rgba(255,76,122,.1);border:1px solid rgba(255,76,122,.3);border-radius:8px;padding:.75rem 1rem;font-size:.82rem;color:#ffb3c6;margin-bottom:1.3rem;line-height:1.5;}
+.cl-tasks{display:flex;flex-direction:column;gap:.75rem;margin-bottom:1.2rem;}
+.cl-task{display:flex;align-items:center;gap:.9rem;background:rgba(255,255,255,.03);border:1px solid rgba(30,38,64,.8);border-radius:10px;padding:.85rem 1rem;transition:border-color .3s,background .3s;cursor:pointer;}
+.cl-task:hover:not(.done){border-color:rgba(255,76,122,.3);background:rgba(255,76,122,.05);}
+.cl-task.done{border-color:rgba(0,229,160,.4);background:rgba(0,229,160,.05);cursor:default;}
+.cl-chk{width:34px;height:34px;border-radius:8px;border:2px solid rgba(255,76,122,.4);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .3s;font-size:1.1rem;}
+.cl-task.done .cl-chk{border-color:var(--success);background:rgba(0,229,160,.15);color:var(--success);}
+.cl-task-name{flex:1;font-size:.87rem;font-weight:600;color:var(--text);}
+.cl-task.done .cl-task-name{text-decoration:line-through;color:var(--muted);}
+.cl-task-desc{font-size:.72rem;color:var(--muted);margin-top:.15rem;}
+.cl-ts{font-size:.7rem;color:var(--success);font-family:var(--mono);white-space:nowrap;}
+.cl-prog-wrap{margin-bottom:1.2rem;}
+.cl-prog-lbl{display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);margin-bottom:.35rem;}
+.cl-prog-bg{background:rgba(30,38,64,.6);border-radius:10px;height:8px;overflow:hidden;}
+.cl-prog-bar{height:100%;border-radius:10px;background:var(--danger);transition:width .4s ease,background .4s;}
+.cl-prog-bar.complete{background:linear-gradient(90deg,var(--blue),var(--success));}
+.cl-btn-reset{width:100%;background:#1e2640;color:var(--muted);border:none;border-radius:8px;padding:.85rem;font-family:var(--mono);font-size:.9rem;font-weight:700;letter-spacing:.06em;cursor:not-allowed;transition:all .3s;}
+.cl-btn-reset.enabled{background:var(--success);color:#07090f;cursor:pointer;}
+.cl-btn-reset.enabled:hover{background:#33ffb8;box-shadow:0 0 20px rgba(0,229,160,.4);}
+.cl-hint{text-align:center;font-size:.73rem;color:var(--muted);margin-top:.5rem;}
 
-.leak-popup-icon{font-size:3.5rem;margin-bottom:1rem;animation:iconPulse .6s ease-in-out infinite alternate;}
-@keyframes iconPulse{from{transform:scale(1)}to{transform:scale(1.15)}}
-
-.leak-popup-title{
-  font-family:var(--mono);
-  font-size:1.4rem;
-  font-weight:700;
-  color:var(--danger);
-  letter-spacing:.08em;
-  margin-bottom:.5rem;
-}
-
-.leak-popup-msg{
-  font-size:.88rem;
-  color:#ffb3c6;
-  line-height:1.6;
-  margin-bottom:1.5rem;
-}
-
-.leak-popup-location{
-  display:inline-block;
-  background:rgba(255,76,122,.15);
-  border:1px solid rgba(255,76,122,.3);
-  color:var(--danger);
-  font-size:.8rem;
-  font-weight:700;
-  padding:.3rem .9rem;
-  border-radius:20px;
-  margin-bottom:1.5rem;
-  font-family:var(--mono);
-}
-
-.popup-btns{display:grid;grid-template-columns:1fr 1fr;gap:.8rem;margin-top:.5rem;}
-
-.btn-popup-close{
-  background:rgba(255,76,122,.15);
-  color:var(--danger);
-  border:1px solid rgba(255,76,122,.3);
-  border-radius:8px;
-  padding:.7rem;
-  font-size:.85rem;
-  font-weight:700;
-  font-family:var(--mono);
-  cursor:pointer;
-  transition:background .2s;
-}
-.btn-popup-close:hover{background:rgba(255,76,122,.25);}
-
-/* ── REAL-TIME NOTIFICATION TOAST (for all dashboards polling) ── */
-.notif-toast{
-  position:fixed;
-  top:1.2rem;right:1.2rem;
-  max-width:320px;
-  background:#0b1629;
-  border:1px solid var(--border);
-  border-left:4px solid var(--accent);
-  border-radius:10px;
-  padding:1rem 1.2rem;
-  z-index:8000;
-  display:none;
-  animation:slideIn .3s ease both;
-  box-shadow:0 8px 24px rgba(0,0,0,.4);
-}
-.notif-toast.show{display:block;}
-@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:translateX(0)}}
-.notif-toast.danger{border-left-color:var(--danger);background:#130008;}
-.notif-toast.success{border-left-color:var(--success);background:#001a0f;}
-.notif-title{font-family:var(--mono);font-size:.85rem;font-weight:700;margin-bottom:.3rem;}
-.notif-body{font-size:.78rem;color:var(--muted);line-height:1.5;}
+/* ── Yellow Warning Banner ── */
+#yellowWarn{display:none;position:fixed;top:0;left:50%;transform:translateX(-50%);background:#1a1200;border:2px solid var(--warn);border-top:none;border-radius:0 0 12px 12px;padding:.7rem 1.5rem;z-index:7000;display:none;align-items:center;gap:.8rem;box-shadow:0 4px 20px rgba(255,179,0,.2);}
+#yellowWarn.show{display:flex;}
 </style>
 </head>
 <body>
 
-<!-- ── LEAK POPUP ── -->
-<div class="leak-popup" id="leakPopup">
-  <div class="leak-popup-box">
-    <div class="leak-popup-icon">🚨</div>
-    <div class="leak-popup-title">GAS LEAK DETECTED!</div>
-    <p class="leak-popup-msg">
-      Admin has been notified automatically.<br>
-      Please evacuate the area immediately.
-    </p>
-    <div class="leak-popup-location">
-      📍 Station: <?= htmlspecialchars($user['location']) ?>
+<!-- ── YELLOW WARNING BANNER (Feature 2) ── -->
+<div id="yellowWarn">
+  <span style="font-size:1.3rem">⚠️</span>
+  <div>
+    <div style="font-family:var(--mono);color:var(--warn);font-weight:700;font-size:.85rem;letter-spacing:.06em">YELLOW WARNING — PPM RISING RAPIDLY</div>
+    <div style="font-size:.73rem;color:#997700;margin-top:.1rem">Gas levels increasing. Monitor closely and prepare to evacuate.</div>
+  </div>
+  <button onclick="document.getElementById('yellowWarn').classList.remove('show')" style="background:none;border:none;color:#997700;font-size:1.1rem;cursor:pointer;margin-left:.5rem">✕</button>
+</div>
+
+<!-- ── TOAST ── -->
+<div class="toast" id="toast">
+  <div class="toast-title" id="toastTitle"></div>
+  <div id="toastBody"></div>
+</div>
+
+<!-- ── SAFETY CHECKLIST MODAL (Feature 1) ── -->
+<div class="cl-overlay" id="clOverlay">
+  <div class="cl-box">
+    <div class="cl-head">
+      <span class="cl-icon">🚨</span>
+      <div>
+        <div class="cl-title">EMERGENCY SAFETY PROTOCOL</div>
+        <div class="cl-sub">Complete all tasks before resetting the system</div>
+      </div>
     </div>
-    <div class="popup-btns">
-      <button class="btn-popup-close" onclick="closePopup()">✕ Close</button>
+
+    <div class="cl-alert-box">
+      ⚠️ Gas leak detected at <strong><?= htmlspecialchars($user['location']) ?></strong>.
+      Admin has been notified. Follow these steps immediately.
     </div>
+
+    <div class="cl-tasks">
+      <div class="cl-task" id="cl-task-0" onclick="doTask(0,'Open All Windows and Ventilate Area')">
+        <div class="cl-chk" id="cl-chk-0">☐</div>
+        <div>
+          <div class="cl-task-name">Open All Windows and Ventilate Area</div>
+          <div class="cl-task-desc">Ensure proper air circulation to disperse gas concentration</div>
+        </div>
+        <div class="cl-ts" id="cl-ts-0"></div>
+      </div>
+      <div class="cl-task" id="cl-task-1" onclick="doTask(1,'Shut Off Main Gas Valve')">
+        <div class="cl-chk" id="cl-chk-1">☐</div>
+        <div>
+          <div class="cl-task-name">Shut Off Main Gas Valve</div>
+          <div class="cl-task-desc">Locate and close the main gas supply valve immediately</div>
+        </div>
+        <div class="cl-ts" id="cl-ts-1"></div>
+      </div>
+      <div class="cl-task" id="cl-task-2" onclick="doTask(2,'Evacuate All Personnel from Area')">
+        <div class="cl-chk" id="cl-chk-2">☐</div>
+        <div>
+          <div class="cl-task-name">Evacuate All Personnel from Area</div>
+          <div class="cl-task-desc">Ensure all personnel have safely exited the affected zone</div>
+        </div>
+        <div class="cl-ts" id="cl-ts-2"></div>
+      </div>
+    </div>
+
+    <div class="cl-prog-wrap">
+      <div class="cl-prog-lbl">
+        <span>Safety Tasks Completed</span>
+        <span id="cl-prog-txt">0 / 3</span>
+      </div>
+      <div class="cl-prog-bg">
+        <div class="cl-prog-bar" id="cl-prog-bar" style="width:0%"></div>
+      </div>
+    </div>
+
+    <button class="cl-btn-reset" id="cl-reset-btn" onclick="executeReset()">🔄 Reset System</button>
+    <p class="cl-hint" id="cl-hint">Complete all 3 tasks to enable reset</p>
   </div>
 </div>
 
-<!-- ── NOTIFICATION TOAST ── -->
-<div class="notif-toast" id="notifToast">
-  <div class="notif-title" id="notifTitle"></div>
-  <div class="notif-body" id="notifBody"></div>
-</div>
-
+<!-- ── SIDEBAR ── -->
 <aside class="sidebar">
   <div class="sb-logo">
     <h2>⚗️ GAS-SIMHOT</h2>
@@ -239,6 +251,7 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
     <div class="nav-sec">Monitoring</div>
     <a class="nav-item active" href="#">📊 Sensor Monitor</a>
     <a class="nav-item" href="#logs-panel" onclick="document.getElementById('logs-panel').scrollIntoView({behavior:'smooth'});return false;">📋 My Log History</a>
+    <a class="nav-item" href="<?= $profile_url ?>">👤 My Profile</a>
   </nav>
   <div class="sb-foot">
     <div class="user-chip">
@@ -252,6 +265,7 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
   </div>
 </aside>
 
+<!-- ── MAIN ── -->
 <div class="main">
   <div class="topbar">
     <span class="topbar-title">STAFF / SENSOR TERMINAL</span>
@@ -272,13 +286,14 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
           <span style="font-size:.72rem;color:var(--muted)">Station: <?= htmlspecialchars($user['location']) ?></span>
         </div>
         <div class="pb sensor-wrap">
+          <div class="alert-banner ab-warn" id="banner-warn">
+            <span>⚠️</span><span>PPM RISING — Yellow Warning. Monitor closely.</span>
+          </div>
           <div class="alert-banner ab-danger" id="banner-leak">
-            <span>🚨</span>
-            <span>GAS LEAK DETECTED! Admin has been notified.</span>
+            <span>🚨</span><span>GAS LEAK DETECTED! Admin has been notified.</span>
           </div>
           <div class="alert-banner ab-ack" id="banner-ack">
-            <span>✅</span>
-            <span>Admin acknowledged. Under control. <span id="ack-time" style="font-family:var(--mono);margin-left:.3rem"></span></span>
+            <span>✅</span><span>Admin acknowledged. Under control. <span id="ack-time" style="font-family:var(--mono);margin-left:.3rem"></span></span>
           </div>
 
           <div class="sensor-ring safe" id="sensor-ring">
@@ -290,7 +305,7 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
 
           <div class="sim-btns">
             <button class="btn-leak" onclick="triggerLeak()">🚨 Simulate Leak</button>
-            <button class="btn-reset" onclick="resetSystem()">🔄 Reset System</button>
+            <button class="btn-reset" onclick="manualReset()">🔄 Reset System</button>
           </div>
         </div>
       </div>
@@ -307,7 +322,9 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
             <?php while ($l = $logs->fetch_assoc()):
               $isLeak  = stripos($l['action'], 'Leak')  !== false;
               $isReset = stripos($l['action'], 'Reset') !== false;
-              $tc = $isLeak ? 'tag-danger' : ($isReset ? 'tag-success' : 'tag-info');
+              $isCheck = stripos($l['action'], 'Safety Check') !== false;
+              $isWarn  = stripos($l['action'], 'Warning') !== false;
+              $tc = $isLeak ? 'tag-danger' : ($isReset ? 'tag-success' : ($isCheck ? 'tag-warn' : 'tag-info'));
             ?>
               <tr>
                 <td><span class="tag <?= $tc ?>"><?= htmlspecialchars($l['action']) ?></span></td>
@@ -323,8 +340,10 @@ tbody td{padding:.45rem .7rem;vertical-align:middle;}
 </div>
 
 <script>
-const CHECK_URL   = '<?= $check_url ?>';
-const LOG_ACT_URL = '<?= $log_act_url ?>';
+const CHECK_URL    = '<?= $check_url ?>';
+const LOG_ACT_URL  = '<?= $log_act_url ?>';
+const RECORD_URL   = '<?= $record_url ?>';
+const SELF_URL     = '<?= base_url() ?>user/user_dashboard.php';
 
 // ── Clock ──────────────────────────────────────────────────────
 setInterval(() => {
@@ -332,57 +351,50 @@ setInterval(() => {
     new Date().toLocaleTimeString('en-PH',{hour12:false});
 }, 1000);
 
-// ── Audio buzzer ───────────────────────────────────────────────
+// ── Toast ──────────────────────────────────────────────────────
+let toastTimer = null;
+function showToast(type, title, body, ms=4000) {
+  const t = document.getElementById('toast');
+  t.className = 'toast show ' + type;
+  document.getElementById('toastTitle').textContent = title;
+  document.getElementById('toastBody').textContent  = body;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// ── Audio ──────────────────────────────────────────────────────
 let audioCtx = null, buzzerInterval = null;
 function startBuzzer() {
   if (buzzerInterval) return;
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   buzzerInterval = setInterval(() => {
-    const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
-    osc.type = 'square'; osc.frequency.value = 880;
-    gain.gain.setValueAtTime(.08, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(.0001, audioCtx.currentTime + .45);
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); osc.stop(audioCtx.currentTime + .45);
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.type = 'square'; o.frequency.value = 880;
+    g.gain.setValueAtTime(.08, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.0001, audioCtx.currentTime + .45);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + .45);
   }, 600);
 }
 function stopBuzzer() { clearInterval(buzzerInterval); buzzerInterval = null; }
 
-// ── Toast notification ─────────────────────────────────────────
-let toastTimer = null;
-function showToast(type, title, body, duration = 4000) {
-  const toast = document.getElementById('notifToast');
-  toast.className = 'notif-toast show ' + type;
-  document.getElementById('notifTitle').textContent = title;
-  document.getElementById('notifBody').textContent  = body;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => toast.classList.remove('show'), duration);
-}
-
-// ── Popup ──────────────────────────────────────────────────────
-function showLeakPopup() {
-  document.getElementById('leakPopup').classList.add('show');
-}
-function closePopup() {
-  document.getElementById('leakPopup').classList.remove('show');
-}
-// Close popup on backdrop click
-document.getElementById('leakPopup').addEventListener('click', function(e){
-  if (e.target === this) closePopup();
-});
-
-// ── Gauge UI ───────────────────────────────────────────────────
+// ── Gauge ──────────────────────────────────────────────────────
 function setGauge(ppm, state) {
+  document.getElementById('sensor-ppm').textContent = ppm;
+  document.getElementById('ppm-bar').style.width = Math.min((ppm/1000)*100,100) + '%';
   const ring  = document.getElementById('sensor-ring');
   const ppmEl = document.getElementById('sensor-ppm');
   const bar   = document.getElementById('ppm-bar');
   const stTxt = document.getElementById('status-txt');
-  ppmEl.textContent = ppm;
-  bar.style.width   = Math.min((ppm/1000)*100, 100) + '%';
+
   if (state === 'danger') {
     ring.className = 'sensor-ring danger';
     ppmEl.style.color = 'var(--danger)'; bar.style.background = 'var(--danger)';
     stTxt.textContent = '⚠ LEAK DETECTED'; stTxt.style.color = 'var(--danger)';
+  } else if (state === 'warn') {
+    ring.className = 'sensor-ring warn';
+    ppmEl.style.color = 'var(--warn)'; bar.style.background = 'var(--warn)';
+    stTxt.textContent = '⚠ PPM RISING'; stTxt.style.color = 'var(--warn)';
   } else {
     ring.className = 'sensor-ring safe';
     ppmEl.style.color = 'var(--success)'; bar.style.background = 'var(--success)';
@@ -391,74 +403,157 @@ function setGauge(ppm, state) {
 }
 
 function showBanner(which) {
-  document.getElementById('banner-leak').classList.remove('show');
-  document.getElementById('banner-ack').classList.remove('show');
-  if (which) document.getElementById('banner-' + which).classList.add('show');
+  ['banner-warn','banner-leak','banner-ack'].forEach(id =>
+    document.getElementById(id).classList.remove('show'));
+  if (which) document.getElementById('banner-'+which).classList.add('show');
 }
 
-// ── Simulate Leak ──────────────────────────────────────────────
+// ── Feature 1: Checklist ───────────────────────────────────────
+let doneTasks = new Set();
+const TOTAL = 3;
+
 function triggerLeak() {
   setGauge(450, 'danger');
   showBanner('leak');
   startBuzzer();
-  showLeakPopup();   // Show popup with link to admin
-  showToast('danger', '🚨 LEAK DETECTED', 'Admin has been notified automatically.');
-  logAction('Leak Detected');
+  showToast('danger', '🚨 LEAK DETECTED', 'Admin notified. Follow safety protocol.');
+
+  // Log to server
+  const fd = new FormData();
+  fd.append('action', 'Leak Detected');
+  fetch(LOG_ACT_URL, {method:'POST', body:fd}).catch(()=>{});
+
+  // Show checklist
+  doneTasks.clear();
+  resetChecklist();
+  document.getElementById('clOverlay').classList.add('show');
 }
 
-// ── Reset System ───────────────────────────────────────────────
-function resetSystem() {
+function resetChecklist() {
+  for (let i = 0; i < TOTAL; i++) {
+    document.getElementById('cl-task-'+i).classList.remove('done');
+    document.getElementById('cl-chk-'+i).textContent = '☐';
+    document.getElementById('cl-ts-'+i).textContent = '';
+  }
+  updateProgress();
+}
+
+function doTask(idx, name) {
+  if (doneTasks.has(idx)) return;
+  doneTasks.add(idx);
+
+  const task = document.getElementById('cl-task-'+idx);
+  task.classList.add('done');
+  document.getElementById('cl-chk-'+idx).textContent = '✓';
+  document.getElementById('cl-ts-'+idx).textContent =
+    new Date().toLocaleTimeString('en-PH',{hour12:false});
+
+  // Log checklist task
+  const fd = new FormData();
+  fd.append('log_checklist_task','1');
+  fd.append('task_name', name);
+  fetch(SELF_URL, {method:'POST', body:fd}).catch(()=>{});
+
+  updateProgress();
+}
+
+function updateProgress() {
+  const done = doneTasks.size;
+  const pct  = Math.round((done/TOTAL)*100);
+  const bar  = document.getElementById('cl-prog-bar');
+  const btn  = document.getElementById('cl-reset-btn');
+  const hint = document.getElementById('cl-hint');
+
+  document.getElementById('cl-prog-txt').textContent = done + ' / ' + TOTAL;
+  bar.style.width = pct + '%';
+
+  if (done >= TOTAL) {
+    bar.classList.add('complete');
+    btn.classList.add('enabled');
+    btn.disabled = false;
+    hint.textContent = '✅ All tasks complete — you can now reset the system';
+    hint.style.color = 'var(--success)';
+  } else {
+    bar.classList.remove('complete');
+    btn.classList.remove('enabled');
+    btn.disabled = true;
+    hint.textContent = 'Complete all ' + TOTAL + ' tasks to enable reset (' + (TOTAL-done) + ' remaining)';
+    hint.style.color = 'var(--muted)';
+  }
+}
+
+function executeReset() {
+  document.getElementById('clOverlay').classList.remove('show');
   setGauge(0, 'safe');
   showBanner(null);
   stopBuzzer();
-  closePopup();
-  showToast('success', '✅ System Reset', 'Gas levels back to normal.');
-  logAction('System Reset');
-}
+  showToast('success', '✅ System Reset', 'All safety tasks completed. System normal.');
 
-// ── Log action to server ───────────────────────────────────────
-function logAction(act) {
   const fd = new FormData();
-  fd.append('action', act);
+  fd.append('action', 'System Reset');
   fetch(LOG_ACT_URL, {method:'POST', body:fd}).catch(()=>{});
 }
 
+// Manual reset (without checklist — only if no active leak)
+function manualReset() {
+  setGauge(0, 'safe');
+  showBanner(null);
+  stopBuzzer();
+  const fd = new FormData();
+  fd.append('action', 'System Reset');
+  fetch(LOG_ACT_URL, {method:'POST', body:fd}).catch(()=>{});
+}
+
+// ── Feature 2: Trend Recording ─────────────────────────────────
+let warningShown = false;
+function recordPPM(ppm) {
+  const fd = new FormData();
+  fd.append('ppm', ppm);
+  fetch(RECORD_URL, {method:'POST', body:fd})
+    .then(r => r.json())
+    .then(d => {
+      const yw = document.getElementById('yellowWarn');
+      if (d.trend === 'warning' && !warningShown) {
+        warningShown = true;
+        yw.classList.add('show');
+        showToast('warn','⚠️ YELLOW WARNING','PPM is rising rapidly. Stay alert.');
+      } else if (d.trend === 'safe') {
+        warningShown = false;
+        yw.classList.remove('show');
+      }
+    }).catch(()=>{});
+}
+
 // ── Real-time polling ──────────────────────────────────────────
-let wasActive = false;
-let wasAcked  = false;
+let wasActive = false, wasAcked = false, ppmTick = 0;
 
 setInterval(() => {
   fetch(CHECK_URL).then(r => r.json()).then(d => {
     const active = d.is_active === 1;
     const acked  = d.acknowledged_by_admin === 1;
+    const ppm    = d.ppm || (active ? 450 : 0);
 
-    // New leak from another session — show popup
+    // Record PPM for trend analysis every ~30s (every 15 polls of 2s)
+    ppmTick++;
+    if (ppmTick >= 15) { recordPPM(ppm); ppmTick = 0; }
+
     if (active && !wasActive) {
-      showToast('danger', '🚨 ALERT', 'Gas leak detected at ' + (d.location || 'your station'));
+      showToast('danger','🚨 ALERT','Gas leak at <?= addslashes($user['location']) ?>. Follow protocol!');
     }
-
-    // Admin just acknowledged
     if (acked && !wasAcked && active) {
-      showToast('success', '✅ Admin Acknowledged', 'Situation is under control.');
-      closePopup();
+      showToast('success','✅ Admin Acknowledged','Situation is under control.');
+      document.getElementById('clOverlay').classList.remove('show');
     }
 
-    wasActive = active;
-    wasAcked  = acked;
+    wasActive = active; wasAcked = acked;
 
     if (active && !acked) {
-      setGauge(d.ppm || 450, 'danger');
-      showBanner('leak');
-      startBuzzer();
+      setGauge(ppm, 'danger'); showBanner('leak'); startBuzzer();
     } else if (acked) {
-      setGauge(d.ppm || 450, 'danger');
-      showBanner('ack');
-      stopBuzzer();
+      setGauge(ppm, 'danger'); showBanner('ack'); stopBuzzer();
       if (d.ack_time) document.getElementById('ack-time').textContent = d.ack_time;
     } else {
-      setGauge(0, 'safe');
-      showBanner(null);
-      stopBuzzer();
+      setGauge(0, 'safe'); showBanner(null); stopBuzzer();
     }
   }).catch(()=>{});
 }, 2000);

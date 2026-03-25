@@ -212,14 +212,22 @@ tbody td{padding:.5rem .7rem;vertical-align:middle;}
     <a class="nav-item active" href="#">
       <span>📊</span> Dashboard
     </a>
-    <a class="nav-item" href="#map-section" onclick="document.getElementById('map-section').scrollIntoView({behavior:'smooth'});return false;">
-      <span>🗺️</span> Live Map
-    </a>
+    <a class="nav-item" href="#map-section" onclick="document.getElementById('map-section').scrollIntoView()">
+    <span>🗺️</span> Live Map
+</a>
+
+<a class="nav-item" href="floor_plan.php">
+    <span>🏠</span> Interactive Floor Plan
+</a>
+<a class="nav-item" href="generate_report.php" target="_blank">
+    <span>📄</span> Weekly Report (PDF)
+</a>
     <div class="nav-sec" style="margin-top:.8rem">Management</div>
     <a class="nav-item" href="#logs-section" onclick="document.getElementById('logs-section').scrollIntoView({behavior:'smooth'});return false;">
       <span>📋</span> Activity Logs
     </a>
-    <a class="nav-item red" href="<?= $clear_url ?>"
+    <a class="nav-item" href="<?= base_url() ?>user/profile.php"><span>👤</span> My Profile</a>
+        <a class="nav-item red" href="<?= $clear_url ?>"
        onclick="return confirm('Delete ALL activity logs? This cannot be undone.')">
       <span>🗑️</span> Clear Logs
     </a>

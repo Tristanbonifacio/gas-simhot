@@ -201,7 +201,9 @@ tbody td{padding:.5rem .8rem;vertical-align:middle;}
     <a class="nav-item" href="#personnel" onclick="document.getElementById('personnel').scrollIntoView({behavior:'smooth'});return false;">👥 Manage Users</a>
     <a class="nav-item" href="#" onclick="openModal()">➕ Add Personnel</a>
     <div class="nav-sec" style="margin-top:.8rem">Audit</div>
-    <a class="nav-item" href="#audit" onclick="document.getElementById('audit').scrollIntoView({behavior:'smooth'});return false;">🔍 System Audit</a>
+    <a class="nav-item" href="<?= base_url() ?>manager/sensor_health.php">🔧 Sensor Health</a>
+    <a class="nav-item" href="<?= base_url() ?>user/profile.php">👤 My Profile</a>
+        <a class="nav-item" href="#audit" onclick="document.getElementById('audit').scrollIntoView({behavior:'smooth'});return false;">🔍 System Audit</a>
   </nav>
   <div class="sb-foot">
     <div class="user-chip">
