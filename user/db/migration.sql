@@ -160,19 +160,3 @@ FROM user_activity_logs l
 JOIN users u ON l.user_id = u.id
 WHERE l.action LIKE '%Leak%'
 ORDER BY l.created_at DESC;
-
--- ============================================================
---  GAS-SIMHOT — Enhanced Activity Logs Migration
---  Gamit ang SHOW COLUMNS (no information_schema needed)
--- ============================================================
-
--- Check muna kung existing ang columns
-SHOW COLUMNS FROM user_activity_logs LIKE 'ip_address';
-SHOW COLUMNS FROM user_activity_logs LIKE 'user_agent';  
-SHOW COLUMNS FROM user_activity_logs LIKE 'page_url';
-
--- Kapag walang lumabas sa above queries, tsaka mo i-run ito:
-ALTER TABLE user_activity_logs
-    ADD COLUMN ip_address  VARCHAR(45)  DEFAULT NULL AFTER action,
-    ADD COLUMN user_agent  VARCHAR(500) DEFAULT NULL AFTER ip_address,
-    ADD COLUMN page_url    VARCHAR(500) DEFAULT NULL AFTER user_agent;

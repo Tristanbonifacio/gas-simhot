@@ -27,10 +27,11 @@ $is_active   = (int)$db->query("SELECT is_active FROM system_status WHERE id=1")
 
 // Logs
 $logs = $db->query("
-    SELECT u.full_name, u.role, u.location, l.action, l.created_at
+    SELECT u.full_name, u.role, u.location, l.action,
+           l.ip_address, l.user_agent, l.page_url, l.created_at
     FROM user_activity_logs l
     JOIN users u ON l.user_id = u.id
-    ORDER BY l.created_at DESC LIMIT 50
+    ORDER BY l.created_at DESC LIMIT 100
 ");
 
 $msg          = htmlspecialchars($_GET['msg'] ?? '');
@@ -38,6 +39,26 @@ $check_url    = base_url() . 'auth/check_alert.php';
 $log_act_url  = base_url() . 'core/log_action.php';
 $logout_url   = logout_url();
 $clear_url    = base_url() . 'admin/admin_dashboard.php?clear=1';
+
+// ── Helper: extract readable browser name from User-Agent ──────
+function parse_ua(string $ua): string {
+    if (!$ua) return '—';
+    if (str_contains($ua, 'Edg'))     return '🔵 Edge';
+    if (str_contains($ua, 'Chrome'))  return '🟢 Chrome';
+    if (str_contains($ua, 'Firefox')) return '🟠 Firefox';
+    if (str_contains($ua, 'Safari') && !str_contains($ua, 'Chrome')) return '🔘 Safari';
+    if (str_contains($ua, 'Opera') || str_contains($ua, 'OPR')) return '🔴 Opera';
+    if (str_contains($ua, 'Mobile')) return '📱 Mobile';
+    return '🌐 Browser';
+}
+
+// ── Helper: shorten URL to just the filename ────────────────────
+function shorten_url(string $url): string {
+    if (!$url || $url === 'Direct / Unknown') return '—';
+    $path = parse_url($url, PHP_URL_PATH) ?? $url;
+    return basename($path) ?: $path;
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -212,16 +233,9 @@ tbody td{padding:.5rem .7rem;vertical-align:middle;}
     <a class="nav-item active" href="#">
       <span>📊</span> Dashboard
     </a>
-    <a class="nav-item" href="#map-section" onclick="document.getElementById('map-section').scrollIntoView()">
-    <span>🗺️</span> Live Map
-</a>
-
-<a class="nav-item" href="floor_plan.php">
-    <span>🏠</span> Interactive Floor Plan
-</a>
-<a class="nav-item" href="generate_report.php" target="_blank">
-    <span>📄</span> Weekly Report (PDF)
-</a>
+    <a class="nav-item" href="#map-section" onclick="document.getElementById('map-section').scrollIntoView({behavior:'smooth'});return false;">
+      <span>🗺️</span> Live Map
+    </a>
     <div class="nav-sec" style="margin-top:.8rem">Management</div>
     <a class="nav-item" href="#logs-section" onclick="document.getElementById('logs-section').scrollIntoView({behavior:'smooth'});return false;">
       <span>📋</span> Activity Logs
@@ -321,7 +335,7 @@ tbody td{padding:.5rem .7rem;vertical-align:middle;}
       <div class="log-scroll">
         <table id="logTable">
           <thead>
-            <tr><th>User</th><th>Role</th><th>Station</th><th>Action</th><th>Time</th></tr>
+            <tr><th>User</th><th>Role</th><th>Station</th><th>Action</th><th>IP Address</th><th>Browser</th><th>Page</th><th>Time</th></tr>
           </thead>
           <tbody>
           <?php while ($row = $logs->fetch_assoc()):
@@ -332,11 +346,12 @@ tbody td{padding:.5rem .7rem;vertical-align:middle;}
             <tr>
               <td style="font-weight:600"><?= htmlspecialchars($row['full_name']) ?></td>
               <td><span class="tag tag-muted"><?= strtoupper($row['role']) ?></span></td>
-              <td style="color:var(--muted)"><?= htmlspecialchars($row['location']) ?></td>
+              <td style="color:var(--muted);font-size:.8rem"><?= htmlspecialchars($row['location']) ?></td>
               <td><span class="tag <?= $tc ?>"><?= htmlspecialchars($row['action']) ?></span></td>
-              <td style="font-family:var(--mono);font-size:.75rem;color:var(--muted)">
-                <?= date('M d, H:i:s', strtotime($row['created_at'])) ?>
-              </td>
+              <td style="font-family:var(--mono);font-size:.72rem;color:var(--muted)"><?= htmlspecialchars($row['ip_address'] ?? '—') ?></td>
+              <td style="font-size:.72rem;color:var(--muted);max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($row['user_agent'] ?? '') ?>"><?= htmlspecialchars(parse_ua($row['user_agent'] ?? '')) ?></td>
+              <td style="font-size:.72rem;color:var(--muted);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="<?= htmlspecialchars($row['page_url'] ?? '') ?>"><?= htmlspecialchars(shorten_url($row['page_url'] ?? '')) ?></td>
+              <td style="font-family:var(--mono);font-size:.72rem;color:var(--muted);white-space:nowrap"><?= date('M d, H:i:s', strtotime($row['created_at'])) ?></td>
             </tr>
           <?php endwhile; ?>
           </tbody>
@@ -451,6 +466,7 @@ function poll() {
 function acknowledge() {
   const fd = new FormData();
   fd.append('action', 'admin_ack');
+  fd.append('page_url', window.location.href);
   fetch(LOG_ACT_URL, {method:'POST', body:fd}).then(() => poll());
 }
 
